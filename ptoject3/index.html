@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Flag of Charts – Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <script src="https://unpkg.com/d3@7"></script>
+  <style>
+    html, body { margin:0; padding:0; height:100%; background:#0b0b0b; color:#fff; }
+    #wrap { height:100%; display:grid; place-items:center; }
+    svg { width: min(95vw,1400px); height: auto; background:#fff; border-radius:10px; }
+    .tooltip {
+      position:fixed;
+      pointer-events:none;
+      padding:6px 8px;
+      font:12px system-ui, sans-serif;
+      background:rgba(0,0,0,.8);
+      color:#fff;
+      border-radius:6px;
+      opacity:0;
+      transition: opacity .12s;
+    }
+    .btn {
+      position:fixed;
+      top:14px;
+      left:14px;
+      padding:6px 10px;
+      background:#fff;
+      border-radius:8px;
+      font:13px system-ui;
+      cursor:pointer;
+      user-select:none;
+      color:#000;
+    }
+    .modal-overlay {
+      position:fixed;
+      inset:0;
+      background:rgba(0,0,0,.55);
+      display:grid;
+      place-items:center;
+      z-index:10;
+    }
+    .modal-card {
+      background:#fff;
+      border-radius:12px;
+      padding:24px;
+      max-width:80vw;
+      color:#000;
+      font:14px system-ui;
+      box-shadow:0 8px 24px rgba(0,0,0,0.2);
+      max-height:90vh;
+      overflow:auto;
+    }
+    .modal-header {
+      font:600 18px system-ui;
+      margin-bottom:16px;
+    }
+  </style>
+</head>
+<body>
+  <div id="wrap">
+    <div class="btn" id="reset">Reset view</div>
+    <div class="tooltip" id="tip"></div>
+    <svg id="flag" viewBox="0 0 1900 1000" aria-label="US Flag made of charts"></svg>
+  </div>
+
+  <script>
+    (function(){
+      const H = 1000, W = 1900;
+      const stripeH = H/13;
+      const canton = { x:0, y:0, w:0.76*H, h:7*stripeH };
+      const rows = [6,5,6,5,6,5,6,5,7];
+      const rowGap = canton.h/(rows.length+1);
+      const starR = Math.min((canton.w/Math.max(...rows))*0.35, rowGap*0.45);
+
+      const STATES = [
+        'AL','AK','AZ','AR','CA','CO','CT','DE','DC','FL','GA','HI','ID','IL','IN',
+        'IA','KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH',
+        'NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT',
+        'VT','VA','WA','WV','WI','WY'
+      ];
+
+      // Real data series for two stats (approximate)
+      const seriesTop1 = [
+        {t:1989, y:22.8}, {t:1995, y:26.4}, {t:2000, y:29.7},
+        {t:2005, y:31.0}, {t:2010, y:27.2}, {t:2015, y:29.1},
+        {t:2020, y:32.4}, {t:2024, y:30.8}
+      ];
+      const seriesGunDeaths = [
+        {t:1999, y:10.3},
+        {t:2010, y:10.1},
+        {t:2015, y:11.5},
+        {t:2019, y:12.1},
+        {t:2021, y:14.6},
+        {t:2023, y:13.7}
+      ];
+
+      const KPI_STATS = {
+        AL:{ label:"The top 1% of U.S. households hold about 30% of the national wealth.", value:"≈ 30 %" },
+        AK:{ label:"The top 1% of U.S. households hold about 50% of stock-market wealth.", value:"≈ 50 %" },
+        AZ:{ label:"Total reported hate-crime incidents in the U.S. are about 10,600 as of 2023.", value:"≈ 10,600 (2023)" },
+        AR:{ label:"Annual U.S. gun deaths are approximately 46,300 in 2023.", value:"≈ 46,300 (2023)" },
+        CA:{ label:"About 79% of murders in the U.S. involve a firearm.", value:"≈ 79 %" },
+        CO:{ label:"Each day in the U.S. roughly 125 people are killed with firearms.", value:"≈ 125/day" },
+        CT:{ label:"The non-fatal firearm violence rate for persons age 12+ is about 2.0 per 1,000 in 2023.", value:"≈ 2.0 per 1,000 (2023)" },
+        DE:{ label:"Mass shootings make up only about 1% of all gun-violence incidents in the U.S.", value:"≈ 1 %" },
+        DC:{ label:"Reported U.S. hate-crime incidents rose by about 1.3% year-over-year.", value:"↑ ~1.3 %" },
+        FL:{ label:"The income share held by the top 1% in the U.S. rose from ~20% in 1980 to ~30% now.", value:"≈ 20 %→30 %" },
+        GA:{ label:"The bottom 50% of U.S. households hold about 2.6% of net worth.", value:"≈ 2.6 %" },
+        HI:{ label:"The bottom 50% of Americans own only about 1% of stock-market wealth.", value:"≈ 1 %" },
+        ID:{ label:"The U.S. gun-homicide rate is about 26 times higher than other developed countries.", value:"≈ 26× higher" },
+        IL:{ label:"About 55% of U.S. suicides involve a firearm.", value:"≈ 55 %" },
+        IN:{ label:"Currently there are over 10 states with extremely high income‐inequality trends.", value:"≈ 10+" },
+        IA:{ label:"Hate-crime incidents increased by about 11.6% year-over-year in recent data.", value:"≈ 11.6 %" },
+        KS:{ label:"More than 65% of U.S. wealth is held by the richest 10%.", value:"≈ >65 %" },
+        KY:{ label:"The richest 1% of U.S. households hold roughly 40 trillion USD in wealth.", value:"≈ $40 T" },
+        LA:{ label:"The non-fatal firearm‐victimization rate is about 2.0 per 1,000 persons.", value:"≈ 2.0 per 1,000" },
+        ME:{ label:"Approximately 250+ people are shot and wounded per day in the U.S.", value:"≈ 250+" },
+        MD:{ label:"The bottom 90% of U.S. households hold only about 28% of net worth.", value:"≈ 28 %" },
+        MA:{ label:"The median net-worth of U.S. households has remained nearly flat from 1989 to 2024.", value:"≈ flat (’89-’24)" },
+        MI:{ label:"The top 10% of U.S. households own more than 80% of stocks.", value:"top 10% ≈ >80 %" },
+        MN:{ label:"About 60% of U.S. hate-crimes are motivated by race or ethnicity.", value:"≈ 60 %" },
+        MS:{ label:"U.S. gun-death numbers hit a record high of about 46,278 in 2023.", value:"≈ 46,278 (2023)" },
+        MO:{ label:"Wealth accumulation in the U.S. has outpaced real economic-output growth.", value:"Wealth > Output growth" },
+        MT:{ label:"The number of U.S. billionaires increased markedly while median-household gains remained modest.", value:"≈ 1,000 →≈ $70 k" },
+        NE:{ label:"In many U.S. states the top 0.01% hold very high shares of income.", value:"≈ very high" },
+        NV:{ label:"About 56% of Americans report they are just getting by financially.", value:"≈ 56 %" },
+        NH:{ label:"Immigration detentions or removals per 100k people are approximately 42.", value:"≈ 42" },
+        NJ:{ label:"The U.S. spends about 10% of its federal budget on foreign aid compared to domestic investment.", value:"≈ 10 % abroad" },
+        NM:{ label:"The middle-class household share in the U.S. is currently around 50%.", value:"≈ 50 %" },
+        NY:{ label:"The gender-pay gap in the U.S. is such that women earn about 82% of men’s median earnings.", value:"≈ 82 (earnings women/men)" },
+        NC:{ label:"Median net-worth of White households is ~180 k USD versus ~24 k USD for Black households.", value:"≈ White≈$180 k vs Black≈$24 k" },
+        ND:{ label:"Unemployment for Black Americans is about twice as high as for White Americans.", value:"≈ 2× higher for Black" },
+        OH:{ label:"Incarceration rates for Black Americans are about five times higher than for White Americans.", value:"≈ 5× higher for Black" },
+        OK:{ label:"The number of U.S. mass-shootings per year is more than 50.", value:"≈ >50" },
+        OR:{ label:"Child-poverty rate in the U.S. is about 16%.", value:"≈ 16 %" },
+        PA:{ label:"There are about 35 homeless people per 10,000 population in the U.S.", value:"≈ 35" },
+        RI:{ label:"Significant gaps remain in disability-services access in the U.S.", value:"≈ Significant" },
+        SC:{ label:"About 30% of U.S. low-income or minority communities are exposed to major polluting plants.", value:"≈ 30 %" },
+        SD:{ label:"There are approximately 10 ethics-violations or indicted officials per year in some states.", value:"≈ 10 (yr)" },
+        TN:{ label:"About five voter-disenfranchisement laws are passed per year in some U.S. states.", value:"≈ 5 (yr)" },
+        TX:{ label:"The top 1% of U.S. earners pay more than ten times the tax-burden of the bottom 50%.", value:"≈ >10×" },
+        UT:{ label:"Public-education spending per pupil in the U.S. averages about 12,000 USD.", value:"≈ $12k" },
+        VT:{ label:"The maternal-mortality rate for Black Americans is about three times higher than for White Americans.", value:"≈ 3× higher for Black" },
+        VA:{ label:"About 42% of LGBTQ+ youth in the U.S. report harassment in schools.", value:"≈ 42 %" },
+        WA:{ label:"ICE arrests or removals in the U.S. occur at about 30 per 100,000 people.", value:"≈ 30" },
+        WV:{ label:"Deportations of formerly lawful immigrants or asylum-seekers occur at about 15 per 100,000 people.", value:"≈ 15 per 100k" },
+        WI:{ label:"About 20% of U.S. households have medical-debt problems.", value:"≈ 20 %" },
+        WY:{ label:"Anti-LGBTQ incidents in the U.S. are trending upward by about 20%.", value:"≈ ↑ 20 %" }
+      };
+
+      const svg = d3.select('#flag');
+      const gRoot = svg.append('g').attr('id','root');
+      const tip = d3.select('#tip');
+
+      function starPath(cx, cy, R, spikes=5) {
+        const rot = -Math.PI/2, step = Math.PI/spikes;
+        let p = '';
+        for(let i=0;i<spikes*2;i++){
+          const r = (i%2===0 ? R : R*0.4);
+          const a = rot + i*step;
+          const x = cx + Math.cos(a)*r;
+          const y = cy + Math.sin(a)*r;
+          p += (i===0 ? `M ${x} ${y}` : ` L ${x} ${y}`);
+        }
+        return p + ' Z';
+      }
+
+      function starCenters(){
+        const centers = [];
+        rows.forEach((count, r)=>{
+          const y = (r+1)*rowGap;
+          const cellW = canton.w / count;
+          for(let i=0;i<count;i++){
+            const x = (i + 0.5)*cellW;
+            centers.push({ x: canton.x + x, y: canton.y + y });
+          }
+        });
+        return centers;
+      }
+
+      function sparklinePath(series, x, y, w, h){
+        const xs = d3.scaleLinear().domain(d3.extent(series, d=>d.t)).range([x, x+w]);
+        const ys = d3.scaleLinear().domain(d3.extent(series, d=>d.y)).nice().range([y+h, y]);
+        const line = d3.line().x(d=>xs(d.t)).y(d=>ys(d.y));
+        return line(series);
+      }
+
+      function drawFlag(){
+        gRoot.selectAll('*').remove();
+        for(let i=0;i<13;i++){
+          gRoot.append('rect')
+            .attr('x',0).attr('y',i*stripeH)
+            .attr('width',W).attr('height',stripeH)
+            .attr('fill', i%2===0 ? '#B22234' : '#FFFFFF');
+        }
+        gRoot.append('rect')
+          .attr('x', canton.x).attr('y', canton.y)
+          .attr('width', canton.w).attr('height', canton.h)
+          .attr('fill','#3C3B6E');
+
+        const centers = starCenters();
+        const defs = svg.select('defs').empty() ? svg.append('defs') : svg.select('defs');
+        defs.selectAll('clipPath').remove();
+        centers.forEach((c,i)=>{
+          defs.append('clipPath')
+            .attr('id', `clip-star-${i}`)
+            .append('path')
+            .attr('d', starPath(c.x, c.y, starR));
+        });
+
+        const gStars = gRoot.append('g').attr('id','stars');
+        centers.forEach((c,i)=>{
+          const state = STATES[i] || `S${i+1}`;
+          let series = null;
+          let label = KPI_STATS[state].label;
+          let value = KPI_STATS[state].value;
+
+          if(state === 'AL') {
+            series = seriesTop1;
+          } else if(state === 'AR') {
+            series = seriesGunDeaths;
+          }
+
+          const tile = gStars.append('g')
+            .attr('clip-path', `url(#clip-star-${i})`)
+            .attr('data-state', state);
+
+          const box = { x: c.x - starR, y: c.y - starR, w: starR*2, h: starR*2 };
+
+          tile.append('rect')
+            .attr('x', box.x).attr('y', box.y)
+            .attr('width', box.w).attr('height', box.h)
+            .attr('fill', '#3C3B6E');
+
+          if(series) {
+            tile.append('path')
+              .attr('d', sparklinePath(series, box.x+4, box.y+4, box.w-8, box.h-8))
+              .attr('stroke','#FFFFFF').attr('stroke-width',2)
+              .attr('fill','none').attr('opacity',0.95);
+          } else {
+            tile.append('text')
+              .attr('x', box.x + box.w/2)
+              .attr('y', box.y + box.h/2 + (starR/8))
+              .attr('fill','#FFFFFF')
+              .attr('font-size', Math.min(box.w, box.h)/4)
+              .attr('text-anchor','middle')
+              .attr('alignment-baseline','middle')
+              .text('★');
+          }
+
+          gRoot.append('path')
+            .attr('d', starPath(c.x, c.y, starR*1.05))
+            .attr('fill','transparent')
+            .on('mouseenter',(ev)=>{
+              tip.style('opacity',1).text(label + (series ? '' : ' — ' + value));
+            })
+            .on('mousemove',(ev)=>{
+              tip.style('left',(ev.clientX+12)+'px').style('top',(ev.clientY+12)+'px');
+            })
+            .on('mouseleave',()=> tip.style('opacity',0))
+            .on('click',()=> openModal(state, series, label, value));
+        });
+      }
+
+      function openModal(state, series, label, value){
+        const w = 700, h = 400;
+        const overlay = d3.select('body').append('div')
+          .attr('class','modal-overlay')
+          .on('click',()=> overlay.remove());
+
+        const card = overlay.append('div').attr('class','modal-card')
+        card.append('div').attr('class','modal-header').text(label);
+
+        if(series) {
+          const svgFull = card.append('svg').attr('width',w).attr('height',h).style('display','block');
+          const margin = { t:40, r:40, b:50, l:60 };
+          const innerW = w - margin.l - margin.r;
+          const innerH = h - margin.t - margin.b;
+
+          const x = d3.scaleLinear().domain(d3.extent(series,d=>d.t)).range([0, innerW]);
+          const y = d3.scaleLinear().domain(d3.extent(series,d=>d.y)).nice().range([innerH, 0]);
+          const line = d3.line().x(d=>x(d.t)).y(d=>y(d.y));
+
+          const g = svgFull.append('g').attr('transform', `translate(${margin.l},${margin.t})`);
+          g.append('rect').attr('width',innerW).attr('height',innerH).attr('fill','#f8fafc');
+          g.append('g').selectAll('line')
+            .data(y.ticks(5)).enter().append('line')
+            .attr('x1',0).attr('x2',innerW)
+            .attr('y1',d=>y(d)).attr('y2',d=>y(d))
+            .attr('stroke','#ccc').attr('stroke-width',1).attr('stroke-dasharray','3 3');
+          g.append('path')
+            .attr('d', line(series))
+            .attr('stroke','#0f172a').attr('stroke-width',2)
+            .attr('fill','none');
+
+          const xAxis = d3.axisBottom(x).ticks(6).tickFormat(d=>d);
+          const yAxis = d3.axisLeft(y).ticks(5).tickFormat(d=>d);
+          g.append('g').attr('transform',`translate(0,${innerH})`).call(xAxis);
+          g.append('g').call(yAxis);
+
+          svgFull.append('text')
+            .attr('x', margin.l + innerW/2)
+            .attr('y', h - 14)
+            .attr('fill','#000')
+            .attr('text-anchor','middle')
+            .text('Year');
+
+          svgFull.append('text')
+            .attr('transform', `translate(18, ${margin.t + innerH/2}) rotate(-90)`)
+            .attr('fill','#000').attr('text-anchor','middle')
+            .text('Percent / Rate');
+
+        }
+      }
+
+      drawFlag();
+
+      const zoom = d3.zoom().scaleExtent([0.6,18]).on('zoom',(event)=> {
+        gRoot.attr('transform', event.transform);
+      });
+      svg.call(zoom);
+
+      document.getElementById('reset').onclick = ()=> {
+        svg.transition().duration(300).call(zoom.transform, d3.zoomIdentity);
+      };
+
+    })();
+  </script>
+</body>
+</html>
